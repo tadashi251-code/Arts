@@ -48,6 +48,8 @@
     --navy-2:#22355e;
     --paper:#F5F3EC;
     --line:#DFE3EA;
+    --header-blue:#2E8BF0;
+    --header-blue-deep:#1E63B0;
     --yellow:#F2B705;
     --yellow-deep:#C98F00;
     --red:#C1442D;
@@ -73,7 +75,7 @@
     height:14px;
     background:repeating-linear-gradient(
       -35deg,
-      var(--yellow) 0px, var(--yellow) 18px,
+      var(--header-blue-deep) 0px, var(--header-blue-deep) 18px,
       transparent 18px, transparent 40px
     );
     opacity:.9;
@@ -82,7 +84,7 @@
 
 
   header.top{
-    background:var(--navy);
+    background:var(--header-blue);
     color:#fff;
     padding:22px 20px 18px;
   }
@@ -1625,4 +1627,3 @@ ${rubric}
 
 </body>
 </html>
-
