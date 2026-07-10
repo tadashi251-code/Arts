@@ -1075,7 +1075,7 @@
             <td>${esc(r.className)}</td>
             <td>${esc(r.entry)}</td>
             ${allRatingItems.map(rt=>`<td class="mono">${r.ratings[rt.id]||'-'}</td>`).join('')}
-            <td style="max-width:220px;">${esc(Object.values(r.reflections)[0]||'').slice(0,40)}…</td>
+            <td style="max-width:220px; overflow-wrap:anywhere; word-break:break-all; white-space:normal;">${esc(Object.values(r.reflections)[0]||'').slice(0,40)}…</td>
             <td>${r.aiScore ? `<span class="mono">${r.aiScore.ai} / ${(r.aiScore.aiPerItem||[]).length*5}</span>` : '<span class="pending">未採点</span>'}</td>
             <td class="mono">${r.aiScore ? `${r.aiScore.bonus} / ${(r.aiScore.aiPerItem||[]).length*5}` : '-'}</td>
             <td>${renderScoreCell(r)}</td>
