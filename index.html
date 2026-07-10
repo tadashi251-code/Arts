@@ -1142,7 +1142,7 @@ ${refsText}
 
     const key = getGeminiKey();
     if(!key){ throw new Error('先にAPIキーを設定してください（画面右上「🔑 APIキー設定」）'); }
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${key}`;
     const response = await fetch(url, {
       method: "post",
       headers: {"Content-Type":"application/json"},
@@ -1187,7 +1187,7 @@ ${rubric}
 
     const key = getGeminiKey();
     if(!key){ throw new Error('先にAPIキーを設定してください（画面右上「🔑 APIキー設定」）'); }
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${key}`;
     const response = await fetch(url, {
       method: "post",
       headers: {"Content-Type":"application/json"},
