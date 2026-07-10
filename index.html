@@ -72,13 +72,9 @@
 
   /* ===== lane-line signature ===== */
   .lanes{
-    height:14px;
-    background:repeating-linear-gradient(
-      -35deg,
-      var(--header-blue-deep) 0px, var(--header-blue-deep) 18px,
-      transparent 18px, transparent 40px
-    );
-    opacity:.9;
+    height:6px;
+    background:var(--yellow-deep);
+    opacity:.95;
   }
   .lanes.thin{height:6px;}
 
@@ -488,7 +484,7 @@
     }
     $app.innerHTML = `
       <header class="top">
-        <div class="eyebrow">BIJUTSU · ビジュツカ</div>
+        <div class="eyebrow">中学校【美術科】</div>
         <h1>各題材 振り返り入力アプリ</h1>
         <p>今日取り組んだ題材を選んで、自分の制作を自分の言葉でふり返る</p>
       </header>
