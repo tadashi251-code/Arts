@@ -1143,11 +1143,22 @@ ${refsText}
     const key = getGeminiKey();
     if(!key){ throw new Error('先にAPIキーを設定してください（画面右上「🔑 APIキー設定」）'); }
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${key}`;
-    const response = await fetch(url, {
-      method: "post",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(()=>controller.abort(), 30000);
+    let response;
+    try{
+      response = await fetch(url, {
+        method: "post",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+        signal: controller.signal
+      });
+    }catch(e){
+      if(e.name === 'AbortError') throw new Error('Gemini APIへの通信が30秒以内に応答しませんでした（ネットワークまたはAPIキーをご確認ください）');
+      throw new Error('Gemini APIへの通信に失敗しました: ' + e.message);
+    }finally{
+      clearTimeout(timeoutId);
+    }
     const json = await response.json();
     console.log('Gemini rubric response:', json);
     if(!response.ok || json.error){
@@ -1188,11 +1199,22 @@ ${rubric}
     const key = getGeminiKey();
     if(!key){ throw new Error('先にAPIキーを設定してください（画面右上「🔑 APIキー設定」）'); }
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${key}`;
-    const response = await fetch(url, {
-      method: "post",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(()=>controller.abort(), 30000);
+    let response;
+    try{
+      response = await fetch(url, {
+        method: "post",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+        signal: controller.signal
+      });
+    }catch(e){
+      if(e.name === 'AbortError') throw new Error('Gemini APIへの通信が30秒以内に応答しませんでした（ネットワークまたはAPIキーをご確認ください）');
+      throw new Error('Gemini APIへの通信に失敗しました: ' + e.message);
+    }finally{
+      clearTimeout(timeoutId);
+    }
     const json = await response.json();
     if(!response.ok || json.error){
       throw new Error('Gemini API error: ' + (json.error && json.error.message ? json.error.message : response.status));
@@ -1236,18 +1258,29 @@ ${rubric}
   async function gradeAll(){
     const tpl = state.config.templates.find(t=>t.id===state.r_templateId);
     const targets = state.r_responses.filter(r=>!r.aiScore);
+    let failCount = 0;
+    let lastError = '';
     for(const resp of targets){
       state.r_grading[resp.id] = true; render();
       try{
         const score = await gradeResponse(tpl, resp);
         resp.aiScore = score;
         await saveAiScoreOnly(tpl.id, resp.id, score);
-      }catch(e){ /* skip on failure, continue */ }
+      }catch(e){
+        console.error('gradeAll failed for', resp.id, e);
+        failCount++;
+        lastError = e.message;
+      }
       delete state.r_grading[resp.id];
+      render();
       await new Promise(r=>setTimeout(r, 4200)); // Gemini無料枠のレート制限対策
     }
     render();
-    toast('AI採点が完了しました');
+    if(failCount>0){
+      toast(`AI採点が完了しました（${failCount}件失敗: ${lastError}）`);
+    }else{
+      toast('AI採点が完了しました');
+    }
   }
 
   function exportCsv(){
