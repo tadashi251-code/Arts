@@ -1,0 +1,1628 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>各題材 振り返り入力アプリ（美術）</title>
+
+<!-- ▼▼▼ ここから設定 ▼▼▼ ------------------------------------------------
+  ★体育版とは別に、美術専用の新しいFirebaseプロジェクトを作ってください
+   （同じプロジェクトを使い回すと、体育と美術のデータ・題材一覧が混ざってしまいます）
+  1) Firebaseコンソール(https://console.firebase.google.com/)で新しいプロジェクトを作成
+  2) 左メニュー「構築」→「Realtime Database」→ 作成（ロケーションは asia-southeast1 などでOK）
+     → 開始時のルールは「テストモードで開始」を選ぶ
+  3) 左上の歯車アイコン →「プロジェクトの設定」→ 下の方の「マイアプリ」→ ウェブアプリを追加(</>アイコン)
+  4) 表示された firebaseConfig の中身を下の FIREBASE_CONFIG にそのままコピペする
+  5) 30日後にテストモードの権限が切れるので、Realtime Database →「ルール」タブで下記に書き換えて公開する
+     { "rules": { ".read": true, ".write": true } }
+     （生徒が全員ログイン不要で使えるようにするための設定。学校の実技の振り返りデータなので
+       このレベルの公開設定でも実用上は問題ないと考えられますが、個人情報の取り扱いには
+       十分注意してください）
+------------------------------------------------------------------------- -->
+<script>
+  const FIREBASE_CONFIG = {
+    apiKey: "AIzaSyDnDkrah0GZWM4uq8_q9P5yMwerSyL0I0U",
+    authDomain: "bizyutu-f9a87.firebaseapp.com",
+    databaseURL: "https://bizyutu-f9a87-default-rtdb.firebaseio.com",
+    projectId: "bizyutu-f9a87",
+    storageBucket: "bizyutu-f9a87.firebasestorage.app",
+    messagingSenderId: "52846974543",
+    appId: "1:52846974543:web:abb5aa076e63d8f14f7c3a"
+  };
+  // GeminiのAPIキーはコードに書き込まず、先生モードの画面から入力してもらい、
+  // この端末のブラウザ内（localStorage）だけに保存する。
+  // ※ localStorageなので、GitHub等に公開してもキーがそこに含まれることはない。
+  function getGeminiKey(){ return localStorage.getItem('gemini_api_key') || ''; }
+  function setGeminiKey(k){ localStorage.setItem('gemini_api_key', (k||'').trim()); }
+</script>
+<!-- ▲▲▲ ここまで設定 ▲▲▲ -->
+
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-database-compat.js"></script>
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500;700;900&family=Noto+Sans+JP:wght@400;500;700&family=JetBrains+Mono:wght@500;700&display=swap');
+
+  :root{
+    --navy:#152343;
+    --navy-2:#22355e;
+    --paper:#F5F3EC;
+    --line:#DFE3EA;
+    --yellow:#F2B705;
+    --yellow-deep:#C98F00;
+    --red:#C1442D;
+    --green:#3D7A5C;
+    --text:#152343;
+    --muted:#6A7180;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;}
+  #app{
+    font-family:'Noto Sans JP', sans-serif;
+    background:var(--paper);
+    color:var(--text);
+    min-height:100%;
+    padding-bottom:60px;
+  }
+  .display{font-family:'Zen Kaku Gothic New', sans-serif;}
+  .mono{font-family:'JetBrains Mono', monospace;}
+
+  /* ===== lane-line signature ===== */
+  .lanes{
+    height:14px;
+    background:repeating-linear-gradient(
+      -35deg,
+      var(--yellow) 0px, var(--yellow) 18px,
+      transparent 18px, transparent 40px
+    );
+    opacity:.9;
+  }
+  .lanes.thin{height:6px;}
+
+
+  header.top{
+    background:var(--navy);
+    color:#fff;
+    padding:22px 20px 18px;
+  }
+  header.top .eyebrow{
+    font-size:11px; letter-spacing:.22em; color:var(--yellow);
+    font-weight:700; margin-bottom:4px;
+  }
+  header.top h1{
+    font-weight:900; font-size:22px; margin:0 0 2px;
+  }
+  header.top p{margin:0;color:#B9C2D6;font-size:13px;}
+
+  .modeswitch{
+    display:flex; gap:8px; padding:14px 20px 0;
+    max-width:920px; margin:0 auto;
+  }
+  .modeswitch button{
+    flex:1; border:2px solid var(--navy); background:#fff; color:var(--navy);
+    font-family:'Zen Kaku Gothic New',sans-serif; font-weight:700; font-size:14px;
+    padding:10px 8px; border-radius:10px; cursor:pointer;
+  }
+  .modeswitch button.active{background:var(--navy); color:#fff;}
+
+  main{max-width:920px; margin:0 auto; padding:16px 20px 40px;}
+
+  .tabs{display:flex; gap:6px; margin-bottom:16px; flex-wrap:wrap;}
+  .tabs button{
+    border:none; background:#fff; color:var(--navy-2);
+    padding:8px 14px; border-radius:999px; font-weight:700; font-size:12.5px;
+    cursor:pointer; border:1.5px solid var(--line);
+  }
+  .tabs button.active{background:var(--yellow); border-color:var(--yellow-deep); color:var(--navy);}
+
+  .card{
+    background:#fff; border:1.5px solid var(--line); border-radius:var(--radius);
+    padding:18px; margin-bottom:16px;
+  }
+  .card h2{margin:0 0 4px; font-size:16px; font-family:'Zen Kaku Gothic New';}
+  .card .sub{color:var(--muted); font-size:12.5px; margin:0 0 14px;}
+
+  label.field-label{display:block; font-weight:700; font-size:13px; margin-bottom:6px; color:var(--navy-2);}
+  select, textarea, input[type=text]{
+    width:100%; padding:10px 12px; border-radius:10px; border:1.5px solid var(--line);
+    font-family:inherit; font-size:14px; background:#fff; color:var(--text);
+  }
+  textarea{resize:vertical; min-height:70px;}
+  .hint{font-size:11.5px; color:var(--muted); margin-top:4px;}
+
+  .btn{
+    display:inline-flex; align-items:center; gap:6px;
+    background:var(--navy); color:#fff; border:none; padding:10px 18px;
+    border-radius:10px; font-weight:700; font-size:13.5px; cursor:pointer;
+    font-family:'Zen Kaku Gothic New',sans-serif;
+  }
+  .btn.yellow{background:var(--yellow); color:var(--navy);}
+  .btn.ghost{background:#fff; color:var(--navy); border:1.5px solid var(--navy);}
+  .btn.danger{background:#fff; color:var(--red); border:1.5px solid var(--red);}
+  .btn:disabled{opacity:.45; cursor:not-allowed;}
+  .btn.sm{padding:6px 12px; font-size:12px;}
+
+  .row{display:flex; gap:10px; flex-wrap:wrap;}
+  .row > *{flex:1; min-width:140px;}
+
+  /* rating cones */
+  .rating-block{margin-bottom:18px;}
+  .rating-block .q-label{font-weight:700; font-size:14px;}
+  .rating-block .q-hint{font-size:12px; color:var(--muted); margin-bottom:8px;}
+  .cones{display:flex; gap:8px;}
+  .cone{
+    flex:1; text-align:center; padding:10px 0; border-radius:10px;
+    border:2px solid var(--line); font-weight:700; font-family:'JetBrains Mono';
+    cursor:pointer; user-select:none; background:#fff; color:var(--navy-2);
+  }
+  .cone.selected{background:var(--yellow); border-color:var(--yellow-deep); color:var(--navy);}
+
+  table{width:100%; border-collapse:collapse; font-size:12.5px;}
+  th, td{padding:8px 6px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top;}
+  th{color:var(--muted); font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:.04em;}
+  .score-pill{
+    display:inline-block; padding:2px 8px; border-radius:999px; font-weight:700;
+    font-family:'JetBrains Mono'; font-size:12px;
+  }
+  .score-pill.s5{background:#e3f3ea; color:var(--green);}
+  .score-pill.s4{background:#eef6e6; color:#4c7a2e;}
+  .score-pill.s3{background:#fdf3d6; color:var(--yellow-deep);}
+  .score-pill.s2{background:#fbe6dd; color:#b25a2a;}
+  .score-pill.s1{background:#fbe3df; color:var(--red);}
+  .pending{color:var(--muted); font-style:italic;}
+
+  .empty{
+    text-align:center; padding:34px 16px; color:var(--muted);
+  }
+  .empty .big{font-size:34px;}
+
+  .item-row{
+    display:flex; gap:8px; align-items:flex-start; margin-bottom:8px; background:var(--paper);
+    padding:10px; border-radius:10px; border:1px solid var(--line);
+  }
+  .item-row .fields{flex:1; display:flex; flex-direction:column; gap:6px;}
+  .item-row button{flex-shrink:0;}
+
+  .toast{
+    position:fixed; bottom:18px; left:50%; transform:translateX(-50%);
+    background:var(--navy); color:#fff; padding:10px 20px; border-radius:999px;
+    font-size:13px; font-weight:700; z-index:50; box-shadow:0 6px 18px rgba(0,0,0,.2);
+  }
+
+  .tpl-list{display:flex; flex-direction:column; gap:8px;}
+  .tpl-item{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:12px 14px; border:1.5px solid var(--line); border-radius:10px;
+  }
+  .tpl-item:hover{border-color:var(--yellow-deep);}
+  .tpl-item .name{font-weight:700; font-family:'Zen Kaku Gothic New';}
+  .tpl-item .meta{font-size:11.5px; color:var(--muted);}
+
+  .done-screen{text-align:center; padding:50px 16px;}
+  .done-screen .stamp{
+    display:inline-block; border:4px solid var(--navy); color:var(--navy);
+    font-family:'Zen Kaku Gothic New'; font-weight:900; font-size:20px;
+    padding:14px 28px; border-radius:14px; transform:rotate(-3deg);
+    margin-bottom:14px;
+  }
+
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(21,35,67,.55);
+    display:flex; align-items:center; justify-content:center;
+    z-index:100; padding:20px;
+  }
+  .modal-card{
+    background:#fff; border-radius:16px; padding:22px; width:100%; max-width:360px;
+    box-shadow:0 20px 50px rgba(0,0,0,.25);
+  }
+  .modal-card h3{margin:0 0 6px; font-family:'Zen Kaku Gothic New'; font-size:16px;}
+  .modal-card .sub{color:var(--muted); font-size:12.5px; margin:0 0 14px;}
+  .modal-card input{margin-bottom:0;}
+  @media (max-width:480px){
+    .cones{flex-wrap:wrap;}
+    .cone{min-width:18%;}
+    table{font-size:11px;}
+  }
+</style>
+</head>
+<body>
+
+<div id="app"></div>
+
+<script>
+(function(){
+  const $app = document.getElementById('app');
+
+  function rosterKey(grade, cls){ return grade+'|'+cls; }
+
+  let state = {
+    mode: 'student', // 'student' | 'teacher'
+    teacherTab: 'templates', // templates | roster | responses
+    config: null,
+    loading: true,
+    // student flow
+    s_templateId: null,
+    s_grade: null,
+    s_class: null,
+    s_entry: null,
+    s_ratings: {},
+    s_reflections: {},
+    s_submitting: false,
+    s_done: false,
+    teacherUnlocked: false,
+    modal: null,
+    // teacher: template editor
+    editingTemplate: null, // object being edited, or null
+    tpl_gradeFilter: 'all', // 題材一覧の学年フィルタ
+    // teacher: roster editor
+    rosterGrade: null,
+    rosterClass: null,
+    rosterDraft: '',
+    // teacher: responses view
+    r_templateId: null,
+    r_gradeFilter: 'all',
+    r_classFilter: 'all',
+    r_responses: [],
+    r_loading: false,
+    r_grading: {}, // responseId -> true while grading
+    r_selected: {}, // responseId -> true (削除用チェック状態)
+    rubricGenerating: false,
+    r_visibleIds: [], // 直近の表示行のid一覧（全選択・全件削除に使用）
+  };
+
+  function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  const DEFAULT_AI_RUBRIC = `・自分の作品の課題（表現したいことと、実際の出来栄えとのズレ）を見つけ、どう工夫・改善すべきか具体的に考えられているか。
+・構図・色使い・材料の扱い方など、より良い表現にするための工夫や、判断ができているか。
+・友達の作品からも学ぼうとするなど、意欲的に制作に取り組もうとする姿勢が文章から伝わるか。`;
+
+  function defaultConfig(){
+    const grades = ['1年','2年','3年'];
+    const classesByGrade = {};
+    const rosters = {};
+    grades.forEach(g=>{
+      classesByGrade[g] = ['1組','2組','3組'];
+      classesByGrade[g].forEach(c=>{ rosters[rosterKey(g,c)] = []; });
+    });
+    return {
+      teacherPassword: null,
+      grades: grades,
+      classesByGrade: classesByGrade,
+      templates: [{
+        id: uid(),
+        name: 'ラジオ体操',
+        createdAt: Date.now(),
+        targetGrade: grades[0],
+        ratingGroups: [
+          {
+            id:'taido', name:'主体的に取り組む態度',
+            items:[
+              {id:'r5', label:'意欲', hint:'きびきびとした動作で、全力で取り組めた'},
+            ]
+          },
+          {
+            id:'shikou', name:'思考・判断',
+            items:[
+              {id:'r1', label:'ラジオ体操', hint:'指先まで伸ばし、大きくキレのある動きができた'},
+              {id:'r2', label:'方向転換', hint:'かかとを軸に、素早く正確な角度で回れた'},
+              {id:'r3', label:'規律', hint:'周りの音や動きを聞き、タイミングを合わせて動けた'},
+              {id:'r4', label:'姿勢', hint:'指示を待つ間も、正しい姿勢（気をつけ）を維持できた'},
+            ]
+          }
+        ],
+        reflections: [
+          {id:'f1', label:'感想①：今日の練習で「特に意識したこと」や「うまくできた動き」を詳しく', hint:'腕の角度、かかとの軸、列を揃える意識など、具体的に書こう'},
+          {id:'f2', label:'感想②：集団としてより美しく動くための「これからの課題」や「目標」を', hint:'次の授業で意識したいポイントや、周りを見て気づいたことを書こう'},
+        ],
+        aiRubric: DEFAULT_AI_RUBRIC
+      }],
+      rosters: rosters
+    };
+  }
+
+  // 旧バージョン（reflectionsByGrade等）のテンプレート構造を「1題材=1学年」構造へ移行
+  // ・reflectionsByGradeを持つ題材は、学年ごとに別々の題材として分割する
+  function migrateConfigTemplates(cfg){
+    const grades = cfg.grades && cfg.grades.length ? cfg.grades : ['1年'];
+    const oldList = cfg.templates || [];
+    const needsMigration = oldList.some(t => !t.targetGrade);
+    if(!needsMigration){
+      // 既に新構造。aiRubricが無ければ補うだけ
+      oldList.forEach(t=>{ if(t.aiRubric===undefined) t.aiRubric = DEFAULT_AI_RUBRIC; });
+      return false;
+    }
+    const newList = [];
+    oldList.forEach(t=>{
+      if(t.targetGrade){
+        if(t.aiRubric===undefined) t.aiRubric = DEFAULT_AI_RUBRIC;
+        newList.push(t);
+        return;
+      }
+      const ratingGroups = t.ratingGroups || [
+        {id:'taido', name:'主体的に取り組む態度', items: []},
+        {id:'shikou', name:'思考・判断', items: t.ratings || []},
+      ];
+      if(t.reflectionsByGrade){
+        Object.keys(t.reflectionsByGrade).forEach(g=>{
+          newList.push({
+            id: uid(),
+            name: t.name,
+            createdAt: t.createdAt || Date.now(),
+            targetGrade: g,
+            ratingGroups: JSON.parse(JSON.stringify(ratingGroups)),
+            reflections: JSON.parse(JSON.stringify(t.reflectionsByGrade[g] || [])),
+            aiRubric: DEFAULT_AI_RUBRIC
+          });
+        });
+      } else {
+        const refs = t.reflections || [{id:'f1',label:'感想①',hint:''},{id:'f2',label:'感想②',hint:''}];
+        newList.push({
+          id: t.id || uid(),
+          name: t.name,
+          createdAt: t.createdAt || Date.now(),
+          targetGrade: grades[0],
+          ratingGroups: JSON.parse(JSON.stringify(ratingGroups)),
+          reflections: JSON.parse(JSON.stringify(refs)),
+          aiRubric: DEFAULT_AI_RUBRIC
+        });
+      }
+    });
+    cfg.templates = newList;
+    return true;
+  }
+
+  let db = null; // firebase.initializeApp後にセット
+
+  async function loadConfig(){
+    try{
+      db = firebase.database();
+      const snap = await db.ref('config').once('value');
+      const val = snap.exists() ? snap.val() : null;
+      state.config = val || defaultConfig();
+      if(!val){ await saveConfig(); }
+      if(state.config.teacherPassword === undefined) state.config.teacherPassword = null;
+      if(!state.config.templates) state.config.templates = [];
+
+      // 学年・クラス構造がない旧データを移行
+      if(!state.config.grades) state.config.grades = ['1年','2年','3年'];
+      if(!state.config.classesByGrade){
+        const oldClasses = Object.keys(state.config.rosters||{}).filter(k=>!k.includes('|'));
+        state.config.classesByGrade = {};
+        state.config.grades.forEach(g=>{
+          state.config.classesByGrade[g] = oldClasses.length ? oldClasses.slice() : ['1組','2組','3組'];
+        });
+      }
+      if(!state.config.rosters) state.config.rosters = {};
+      const looksOld = Object.keys(state.config.rosters).some(k=>!k.includes('|'));
+      if(looksOld){
+        const firstGrade = state.config.grades[0];
+        const migrated = {};
+        Object.keys(state.config.rosters).forEach(cls=>{
+          migrated[rosterKey(firstGrade, cls)] = state.config.rosters[cls];
+        });
+        state.config.rosters = migrated;
+      }
+      state.config.grades.forEach(g=>{
+        (state.config.classesByGrade[g]||[]).forEach(c=>{
+          const k = rosterKey(g,c);
+          if(!state.config.rosters[k]) state.config.rosters[k] = [];
+        });
+      });
+
+      const migrated = migrateConfigTemplates(state.config);
+      if(migrated){ await saveConfig(); }
+      state.rosterGrade = state.config.grades[0];
+      state.rosterClass = (state.config.classesByGrade[state.rosterGrade]||[])[0] || null;
+    }catch(e){
+      state.config = defaultConfig();
+      try{ await saveConfig(); }catch(e2){ /* Firebaseに書き込めない場合はメモリ上のみで続行 */ }
+    }
+  }
+  async function saveConfig(){
+    await db.ref('config').set(state.config);
+  }
+
+  async function loadResponses(templateId){
+    try{
+      const snap = await db.ref('responses/'+templateId).once('value');
+      const val = snap.exists() ? snap.val() : null;
+      return val ? Object.values(val) : [];
+    }catch(e){ return []; }
+  }
+  async function saveResponses(templateId, arr){
+    const obj = {};
+    arr.forEach(r=>{ obj[r.id] = r; });
+    await db.ref('responses/'+templateId).set(obj);
+  }
+  // 生徒の送信は自分のキーだけを書き込む（他の生徒の回答と競合しない）
+  async function pushOneResponse(templateId, resp){
+    await db.ref('responses/'+templateId+'/'+resp.id).set(resp);
+  }
+  // AI採点結果も対象の回答だけをピンポイントで更新する
+  async function saveAiScoreOnly(templateId, responseId, aiScore){
+    await db.ref('responses/'+templateId+'/'+responseId+'/aiScore').set(aiScore);
+  }
+  // 回答の削除（複数まとめても1回のリクエストで実行）
+  async function deleteResponses(templateId, ids){
+    const updates = {};
+    ids.forEach(id=>{ updates[id] = null; });
+    await db.ref('responses/'+templateId).update(updates);
+  }
+
+  // ==== 回答一覧のリアルタイム購読（Firebaseのプッシュ更新） ====
+  let responsesRef = null;
+  function stopRealtimeResponses(){
+    if(responsesRef){ responsesRef.off(); responsesRef = null; }
+  }
+  function startRealtimeResponses(templateId){
+    stopRealtimeResponses();
+    responsesRef = db.ref('responses/'+templateId);
+    responsesRef.on('value', (snap)=>{
+      if(Object.keys(state.r_grading).length>0) return; // 採点中は上書きしない
+      const val = snap.val();
+      state.r_responses = val ? Object.values(val) : [];
+      if(state.mode==='teacher' && state.teacherTab==='responses') render();
+    });
+  }
+
+  let toastTimer=null;
+  function toast(msg){
+    let el = document.querySelector('.toast');
+    if(el) el.remove();
+    el = document.createElement('div');
+    el.className='toast';
+    el.textContent=msg;
+    document.body.appendChild(el);
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(()=>el.remove(), 2400);
+  }
+
+  function render(){
+    if(state.loading){
+      $app.innerHTML = `<div class="empty" style="padding-top:80px;">読み込み中…</div>`;
+      return;
+    }
+    $app.innerHTML = `
+      <header class="top">
+        <div class="eyebrow">BIJUTSU · ビジュツカ</div>
+        <h1>各題材 振り返り入力アプリ</h1>
+        <p>今日取り組んだ題材を選んで、自分の制作を自分の言葉でふり返る</p>
+      </header>
+      <div class="lanes"></div>
+      <div class="modeswitch">
+        <button class="${state.mode==='student'?'active':''}" data-act="mode" data-val="student">生徒として回答</button>
+        <button class="${state.mode==='teacher'?'active':''}" data-act="mode" data-val="teacher">${state.teacherUnlocked?'先生モード':'🔒 先生モード'}</button>
+      </div>
+      <main id="main"></main>
+      ${renderModal()}
+    `;
+    const main = document.getElementById('main');
+    main.innerHTML = state.mode==='student' ? renderStudent() : renderTeacher();
+    bindEvents();
+    const firstModalInput = document.querySelector('.modal-card input');
+    if(firstModalInput){
+      firstModalInput.focus();
+      document.querySelectorAll('.modal-card input').forEach(inp=>{
+        inp.addEventListener('keydown', (e)=>{
+          if(e.key==='Enter'){
+            const btn = document.getElementById('modalSubmitBtn');
+            if(btn) btn.click();
+          }
+        });
+      });
+    }
+  }
+
+  function renderModal(){
+    if(!state.modal) return '';
+    const m = state.modal;
+    if(m.kind === 'teacherSetup'){
+      return `<div class="modal-overlay">
+        <div class="modal-card">
+          <h3>先生モードの初期設定</h3>
+          <p class="sub">先生モード用のパスコードを決めてください（4文字以上）。次回からこのパスコードで入れます。</p>
+          <input type="password" id="modalInput1" placeholder="パスコード（4文字以上）">
+          <div class="row" style="margin-top:14px;">
+            <button class="btn ghost" data-act="modal_cancel">キャンセル</button>
+            <button class="btn yellow" id="modalSubmitBtn" data-act="modal_submit_setup">設定して入る</button>
+          </div>
+        </div>
+      </div>`;
+    }
+    if(m.kind === 'teacherLogin'){
+      return `<div class="modal-overlay">
+        <div class="modal-card">
+          <h3>先生モードのパスコード</h3>
+          <p class="sub">設定したパスコードを入力してください</p>
+          <input type="password" id="modalInput1" placeholder="パスコード">
+          <div class="row" style="margin-top:14px;">
+            <button class="btn ghost" data-act="modal_cancel">キャンセル</button>
+            <button class="btn yellow" id="modalSubmitBtn" data-act="modal_submit_login">入る</button>
+          </div>
+        </div>
+      </div>`;
+    }
+    if(m.kind === 'changePass'){
+      return `<div class="modal-overlay">
+        <div class="modal-card">
+          <h3>パスコードの変更</h3>
+          <p class="sub">現在のパスコードと、新しいパスコード（4文字以上）を入力してください</p>
+          <input type="password" id="modalInput1" placeholder="現在のパスコード" style="margin-bottom:8px;">
+          <input type="password" id="modalInput2" placeholder="新しいパスコード（4文字以上）">
+          <div class="row" style="margin-top:14px;">
+            <button class="btn ghost" data-act="modal_cancel">キャンセル</button>
+            <button class="btn yellow" id="modalSubmitBtn" data-act="modal_submit_changepass">変更する</button>
+          </div>
+        </div>
+      </div>`;
+    }
+    if(m.kind === 'geminiKeySetup'){
+      const cur = getGeminiKey();
+      return `<div class="modal-overlay">
+        <div class="modal-card">
+          <h3>Gemini APIキーの設定</h3>
+          <p class="sub">AI採点・AI採点基準の自動生成に使うAPIキーです。この端末のブラウザ内だけに保存され、コードには一切保存されません。<br>
+          発行はこちら → <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a></p>
+          <input type="text" id="modalInput1" placeholder="AIzaSy..." value="${esc(cur)}">
+          <div class="row" style="margin-top:14px;">
+            <button class="btn ghost" data-act="modal_cancel">キャンセル</button>
+            <button class="btn yellow" id="modalSubmitBtn" data-act="modal_submit_geminikey">保存する</button>
+          </div>
+        </div>
+      </div>`;
+    }
+    if(m.kind === 'confirmDeleteTemplate'){
+      return `<div class="modal-overlay">
+        <div class="modal-card">
+          <h3>題材を削除しますか？</h3>
+          <p class="sub">「${esc(m.name)}」を削除します。回答データは残りますが、題材一覧からは消えます。</p>
+          <div class="row" style="margin-top:14px;">
+            <button class="btn ghost" data-act="modal_cancel">キャンセル</button>
+            <button class="btn danger" data-act="modal_confirm_delete_tpl" data-id="${m.id}">削除する</button>
+          </div>
+        </div>
+      </div>`;
+    }
+    if(m.kind === 'confirmDeleteGrade'){
+      return `<div class="modal-overlay">
+        <div class="modal-card">
+          <h3>学年を削除しますか？</h3>
+          <p class="sub">「${esc(m.grade)}」のクラス・名簿データと、この学年専用の題材テンプレートが削除されます（すでに送信された回答データ自体は残ります）。</p>
+          <div class="row" style="margin-top:14px;">
+            <button class="btn ghost" data-act="modal_cancel">キャンセル</button>
+            <button class="btn danger" data-act="modal_confirm_delete_grade">削除する</button>
+          </div>
+        </div>
+      </div>`;
+    }
+    if(m.kind === 'confirmDeleteClass'){
+      return `<div class="modal-overlay">
+        <div class="modal-card">
+          <h3>クラスを削除しますか？</h3>
+          <p class="sub">「${esc(m.grade)} ${esc(m.cls)}」の名簿データが削除されます（すでに送信された回答データ自体は残ります）。</p>
+          <div class="row" style="margin-top:14px;">
+            <button class="btn ghost" data-act="modal_cancel">キャンセル</button>
+            <button class="btn danger" data-act="modal_confirm_delete_class">削除する</button>
+          </div>
+        </div>
+      </div>`;
+    }
+    if(m.kind === 'confirmDeleteResponses'){
+      return `<div class="modal-overlay">
+        <div class="modal-card">
+          <h3>回答を削除しますか？</h3>
+          <p class="sub">${esc(m.label)}を完全に削除します。この操作は取り消せません。</p>
+          <div class="row" style="margin-top:14px;">
+            <button class="btn ghost" data-act="modal_cancel">キャンセル</button>
+            <button class="btn danger" data-act="modal_confirm_delete_responses">削除する</button>
+          </div>
+        </div>
+      </div>`;
+    }
+    return '';
+  }
+
+  // ================= STUDENT MODE =================
+  function renderStudent(){
+    if(state.s_done){
+      return `
+        <div class="card done-screen">
+          <div class="stamp">送信完了</div>
+          <p style="color:var(--muted);">回答ありがとうございました。この画面はもう閉じて大丈夫です。</p>
+          <button class="btn ghost" data-act="s_reset_next">別の記録でもう一度回答する</button>
+        </div>
+      `;
+    }
+
+    let html = `<div class="card">
+      <h2>① 学年を選ぶ</h2>
+      <select data-act="s_pick_grade">
+        <option value="">-- 選択 --</option>
+        ${state.config.grades.map(g=>`<option value="${esc(g)}" ${g===state.s_grade?'selected':''}>${esc(g)}</option>`).join('')}
+      </select>
+    </div>`;
+
+    if(!state.s_grade) return html;
+
+    const gradeTemplates = state.config.templates.filter(t=>t.targetGrade===state.s_grade);
+    const tpl = gradeTemplates.find(t=>t.id===state.s_templateId);
+
+    html += `<div class="card">
+      <h2>② 題材を選ぶ</h2>
+      <p class="sub">今日の授業で取り組んだ題材を選んでください</p>
+      <select data-act="s_pick_template">
+        <option value="">-- 選択 --</option>
+        ${gradeTemplates.map(t=>`<option value="${t.id}" ${t.id===state.s_templateId?'selected':''}>${esc(t.name)}</option>`).join('')}
+      </select>
+      ${gradeTemplates.length===0 ? '<p class="hint" style="color:var(--red);">この学年に登録されている題材がまだありません（先生モード→題材をつくる）</p>':''}
+    </div>`;
+
+    if(!tpl) return html;
+
+    const classes = state.config.classesByGrade[state.s_grade] || [];
+    const roster = state.config.rosters[rosterKey(state.s_grade, state.s_class)] || [];
+
+    html += `<div class="card">
+      <h2>③ クラス・出席番号</h2>
+      <div class="row">
+        <div>
+          <label class="field-label">クラス</label>
+          <select data-act="s_pick_class">
+            <option value="">-- 選択 --</option>
+            ${classes.map(c=>`<option value="${esc(c)}" ${c===state.s_class?'selected':''}>${esc(c)}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label class="field-label">出席番号・名前</label>
+          <select data-act="s_pick_entry" ${!state.s_class?'disabled':''}>
+            <option value="">-- 選択 --</option>
+            ${roster.map(n=>`<option value="${esc(n)}" ${n===state.s_entry?'selected':''}>${esc(n)}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      ${state.s_class && roster.length===0 ? '<p class="hint" style="color:var(--red);">このクラスの名簿がまだ登録されていません（先生モード→学年・クラス管理）</p>':''}
+    </div>`;
+
+    if(state.s_class && state.s_entry){
+      const refs = tpl.reflections || [];
+      html += `<div class="card">
+        <h2>④ 自己評価① 主体的に取り組む態度</h2>
+        <p class="sub">できていたら5、まだまだなら1</p>
+        ${tpl.ratingGroups[0].items.map(r=>`
+          <div class="rating-block">
+            <div class="q-label">${esc(r.label)}</div>
+            <div class="q-hint">${esc(r.hint)}</div>
+            <div class="cones">
+              ${[1,2,3,4,5].map(v=>`<div class="cone ${state.s_ratings[r.id]===v?'selected':''}" data-act="s_rate" data-rid="${r.id}" data-val="${v}">${v}</div>`).join('')}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+
+      <div class="card">
+        <h2>⑤ 自己評価② 思考・判断</h2>
+        <p class="sub">できていたら5、まだまだなら1</p>
+        ${tpl.ratingGroups[1].items.map(r=>`
+          <div class="rating-block">
+            <div class="q-label">${esc(r.label)}</div>
+            <div class="q-hint">${esc(r.hint)}</div>
+            <div class="cones">
+              ${[1,2,3,4,5].map(v=>`<div class="cone ${state.s_ratings[r.id]===v?'selected':''}" data-act="s_rate" data-rid="${r.id}" data-val="${v}">${v}</div>`).join('')}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+
+      <div class="card">
+        <h2>⑥ 感想・振り返り</h2>
+        ${refs.map(f=>`
+          <div style="margin-bottom:16px;">
+            <label class="field-label">${esc(f.label)}</label>
+            <textarea data-act="s_reflect" data-fid="${f.id}" placeholder="${esc(f.hint)}">${esc(state.s_reflections[f.id]||'')}</textarea>
+            <div class="hint">ヒント：${esc(f.hint)}</div>
+          </div>
+        `).join('')}
+        <button class="btn yellow" data-act="s_submit" ${state.s_submitting?'disabled':''}>${state.s_submitting?'送信中…':'送信する'}</button>
+      </div>`;
+    }
+    return html;
+  }
+
+  async function submitStudent(){
+    const tpl = state.config.templates.find(t=>t.id===state.s_templateId);
+    if(!tpl || !state.s_grade || !state.s_class || !state.s_entry) return;
+    const allRatingItems = [...tpl.ratingGroups[0].items, ...tpl.ratingGroups[1].items];
+    const missingRating = allRatingItems.some(r=>!state.s_ratings[r.id]);
+    if(missingRating){ toast('すべての評価項目を選んでください'); return; }
+    const refs = tpl.reflections || [];
+    const missingReflect = refs.some(f=>!(state.s_reflections[f.id]||'').trim());
+    if(missingReflect){ toast('感想をすべて記入してください'); return; }
+
+    state.s_submitting = true; render();
+    try{
+      const resp = {
+        id: uid(),
+        templateId: tpl.id,
+        grade: state.s_grade,
+        className: state.s_class,
+        entry: state.s_entry,
+        ratings: {...state.s_ratings},
+        reflections: {...state.s_reflections},
+        aiScore: null,
+        submittedAt: Date.now(),
+      };
+      await pushOneResponse(tpl.id, resp);
+      state.s_submitting = false;
+      state.s_done = true;
+      render();
+    }catch(e){
+      state.s_submitting = false;
+      toast('送信に失敗しました。もう一度お試しください');
+      render();
+    }
+  }
+
+  function enterTeacherMode(){
+    if(state.teacherUnlocked){
+      state.mode = 'teacher'; render(); return;
+    }
+    if(!state.config.teacherPassword){
+      state.modal = {kind:'teacherSetup'};
+    } else {
+      state.modal = {kind:'teacherLogin'};
+    }
+    render();
+  }
+
+  function changeTeacherPassword(){
+    state.modal = {kind:'changePass'};
+    render();
+  }
+
+  async function submitTeacherSetup(){
+    const val = document.getElementById('modalInput1').value;
+    if(!val || val.length < 4){ toast('4文字以上で設定してください'); return; }
+    state.config.teacherPassword = val;
+    await saveConfig();
+    state.teacherUnlocked = true;
+    state.mode = 'teacher';
+    state.modal = null;
+    toast('パスコードを設定しました');
+    render();
+  }
+
+  function submitTeacherLogin(){
+    const val = document.getElementById('modalInput1').value;
+    if(val === state.config.teacherPassword){
+      state.teacherUnlocked = true;
+      state.mode = 'teacher';
+      state.modal = null;
+      render();
+    } else {
+      toast('パスコードが違います');
+    }
+  }
+
+  async function submitChangePass(){
+    const cur = document.getElementById('modalInput1').value;
+    const next = document.getElementById('modalInput2').value;
+    if(cur !== state.config.teacherPassword){ toast('現在のパスコードが違います'); return; }
+    if(!next || next.length < 4){ toast('新しいパスコードは4文字以上で設定してください'); return; }
+    state.config.teacherPassword = next;
+    await saveConfig();
+    state.modal = null;
+    toast('パスコードを変更しました');
+    render();
+  }
+
+  function resetStudentForNext(){
+    state.s_templateId = null;
+    state.s_grade = null;
+    state.s_class = null;
+    state.s_entry = null;
+    state.s_ratings = {};
+    state.s_reflections = {};
+    state.s_done = false;
+    render();
+  }
+
+  // ================= TEACHER MODE =================
+  function renderTeacher(){
+    let html = `<div class="tabs">
+      <button class="${state.teacherTab==='templates'?'active':''}" data-act="tteam" data-val="templates">題材をつくる</button>
+      <button class="${state.teacherTab==='roster'?'active':''}" data-act="tteam" data-val="roster">学年・クラス・名簿</button>
+      <button class="${state.teacherTab==='responses'?'active':''}" data-act="tteam" data-val="responses">回答・AI採点</button>
+      <button style="margin-left:auto;" data-act="gemini_key_setup">🔑 APIキー設定</button>
+      <button data-act="change_pass">🔒 パスコード変更</button>
+    </div>`;
+    if(state.teacherTab==='templates') html += renderTemplatesTab();
+    else if(state.teacherTab==='roster') html += renderRosterTab();
+    else html += renderResponsesTab();
+    return html;
+  }
+
+  function blankTemplate(){
+    const defaultGrade = state.rosterGrade || (state.config.grades||['1年'])[0];
+    return {
+      id: uid(), name:'', createdAt: Date.now(),
+      targetGrade: defaultGrade,
+      ratingGroups:[
+        {id:'taido', name:'主体的に取り組む態度', items:[{id:uid(),label:'',hint:''}]},
+        {id:'shikou', name:'思考・判断', items:[{id:uid(),label:'',hint:''}]},
+      ],
+      reflections:[{id:uid(),label:'',hint:''}],
+      aiRubric: DEFAULT_AI_RUBRIC
+    };
+  }
+
+  function renderTemplatesTab(){
+    if(state.editingTemplate){
+      const t = state.editingTemplate;
+      return `<div class="card">
+        <h2>題材の編集</h2>
+        <p class="sub">評価項目・感想欄・AI採点基準は題材ごとに自由に設定できます</p>
+
+        <label class="field-label">対象学年</label>
+        <select data-act="edit_target_grade" style="margin-bottom:16px;">
+          ${state.config.grades.map(g=>`<option value="${esc(g)}" ${g===t.targetGrade?'selected':''}>${esc(g)}</option>`).join('')}
+        </select>
+        <p class="hint" style="margin:-10px 0 16px;">この題材は選んだ学年の生徒にだけ表示されます（他の学年のプルダウンには出ません）</p>
+
+        <label class="field-label">題材名</label>
+        <input type="text" data-act="edit_name" value="${esc(t.name)}" placeholder="例：色彩構成、粘土での動物制作、水彩画（風景）など" style="margin-bottom:16px;">
+
+        <label class="field-label">自己評価① 主体的に取り組む態度（${t.ratingGroups[0].items.length}問）</label>
+        ${t.ratingGroups[0].items.map((r,i)=>`
+          <div class="item-row">
+            <div class="fields">
+              <input type="text" data-act="edit_rating_label" data-group="0" data-idx="${i}" value="${esc(r.label)}" placeholder="項目名（例：意欲）">
+              <input type="text" data-act="edit_rating_hint" data-group="0" data-idx="${i}" value="${esc(r.hint)}" placeholder="評価基準の説明">
+            </div>
+            <button class="btn danger sm" data-act="del_rating" data-group="0" data-idx="${i}">削除</button>
+          </div>
+        `).join('')}
+        <button class="btn ghost sm" data-act="add_rating" data-group="0" style="margin-bottom:18px;">＋ 態度の評価項目を追加</button>
+
+        <label class="field-label">自己評価② 思考・判断（${t.ratingGroups[1].items.length}問）</label>
+        ${t.ratingGroups[1].items.map((r,i)=>`
+          <div class="item-row">
+            <div class="fields">
+              <input type="text" data-act="edit_rating_label" data-group="1" data-idx="${i}" value="${esc(r.label)}" placeholder="項目名（例：キレ）">
+              <input type="text" data-act="edit_rating_hint" data-group="1" data-idx="${i}" value="${esc(r.hint)}" placeholder="評価基準の説明">
+            </div>
+            <button class="btn danger sm" data-act="del_rating" data-group="1" data-idx="${i}">削除</button>
+          </div>
+        `).join('')}
+        <button class="btn ghost sm" data-act="add_rating" data-group="1" style="margin-bottom:18px;">＋ 判断の評価項目を追加</button>
+
+        <label class="field-label">感想・記述式の項目（${esc(t.targetGrade)}）</label>
+        ${t.reflections.map((f,i)=>`
+          <div class="item-row">
+            <div class="fields">
+              <input type="text" data-act="edit_ref_label" data-idx="${i}" value="${esc(f.label)}" placeholder="設問（例：今日意識したこと）">
+              <input type="text" data-act="edit_ref_hint" data-idx="${i}" value="${esc(f.hint)}" placeholder="生徒向けのヒント文">
+            </div>
+            <button class="btn danger sm" data-act="del_ref" data-idx="${i}">削除</button>
+          </div>
+        `).join('')}
+        <button class="btn ghost sm" data-act="add_ref" style="margin-bottom:20px;">＋ 感想項目を追加</button>
+
+        <label class="field-label">AI採点基準（この題材の「思考・判断」「主体的な態度」の観点）</label>
+        <div class="row" style="margin-bottom:8px;">
+          <button class="btn ghost sm" data-act="auto_gen_rubric" ${state.rubricGenerating?'disabled':''}>${state.rubricGenerating?'生成中…':'✨ 感想のヒントから自動生成'}</button>
+        </div>
+        <textarea data-act="edit_rubric" style="min-height:110px; margin-bottom:6px;" placeholder="この題材ならではの採点基準を書いてください">${esc(t.aiRubric||'')}</textarea>
+        <p class="hint" style="margin-top:0 0 20px;">感想の設問・ヒントの内容を読み取って、上のボタンでAIに基準文を作らせることもできます。生成後も自由に書き換えられます。</p>
+
+        <div class="row" style="margin-top:20px;">
+          <button class="btn yellow" data-act="save_template">保存する</button>
+          <button class="btn ghost" data-act="cancel_edit">キャンセル</button>
+        </div>
+      </div>`;
+    }
+
+    const filteredTemplates = state.tpl_gradeFilter==='all'
+      ? state.config.templates
+      : state.config.templates.filter(t=>t.targetGrade===state.tpl_gradeFilter);
+
+    return `<div class="card">
+      <h2>題材テンプレート</h2>
+      <p class="sub">題材ごとにフォームを作成。生徒は自分の学年に登録された題材だけを選んで回答します</p>
+      <div class="row" style="margin-bottom:14px;">
+        <select data-act="pick_tpl_grade_filter">
+          <option value="all" ${state.tpl_gradeFilter==='all'?'selected':''}>すべての学年</option>
+          ${state.config.grades.map(g=>`<option value="${esc(g)}" ${g===state.tpl_gradeFilter?'selected':''}>${esc(g)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="tpl-list">
+        ${filteredTemplates.map(t=>`
+          <div class="tpl-item">
+            <div>
+              <div class="name">${esc(t.name)||'（名称未設定）'} <span class="hint" style="font-weight:700;">［${esc(t.targetGrade)}］</span></div>
+              <div class="meta">態度${t.ratingGroups[0].items.length}項目・判断${t.ratingGroups[1].items.length}項目・感想${t.reflections.length}問</div>
+            </div>
+            <div class="row" style="flex:none; gap:6px;">
+              <button class="btn ghost sm" data-act="edit_tpl" data-id="${t.id}">編集</button>
+              <button class="btn ghost sm" data-act="dup_tpl" data-id="${t.id}" title="内容をコピーして別学年用などに使う">複製</button>
+              <button class="btn danger sm" data-act="del_tpl" data-id="${t.id}">削除</button>
+            </div>
+          </div>
+        `).join('') || '<div class="empty">まだ題材がありません</div>'}
+      </div>
+      <button class="btn yellow" data-act="new_tpl" style="margin-top:14px;">＋ 新しい題材をつくる</button>
+    </div>`;
+  }
+
+  function renderRosterTab(){
+    const grades = state.config.grades;
+    const classes = state.config.classesByGrade[state.rosterGrade] || [];
+    const key = rosterKey(state.rosterGrade, state.rosterClass);
+    const list = state.config.rosters[key] || [];
+    return `
+    <div class="card">
+      <h2>学年・クラス管理</h2>
+      <p class="sub">学年やクラスは自由に追加・削除できます</p>
+
+      <label class="field-label">学年</label>
+      <div class="row" style="margin-bottom:8px;">
+        ${grades.map(g=>`
+          <div style="display:flex; gap:4px; flex:none;">
+            <button class="btn ${g===state.rosterGrade?'yellow':'ghost'} sm" data-act="pick_roster_grade" data-val="${esc(g)}">${esc(g)}</button>
+            <button class="btn danger sm" data-act="del_grade" data-val="${esc(g)}" title="この学年を削除">×</button>
+          </div>
+        `).join('')}
+      </div>
+      <div class="row" style="margin-bottom:18px;">
+        <input type="text" id="newGradeInput" placeholder="新しい学年名（例：4年）">
+        <button class="btn ghost sm" data-act="add_grade">＋学年を追加</button>
+      </div>
+
+      <label class="field-label">クラス（${esc(state.rosterGrade)}）</label>
+      <div class="row" style="margin-bottom:8px;">
+        ${classes.map(c=>`
+          <div style="display:flex; gap:4px; flex:none;">
+            <button class="btn ${c===state.rosterClass?'yellow':'ghost'} sm" data-act="pick_roster_class" data-val="${esc(c)}">${esc(c)}</button>
+            <button class="btn danger sm" data-act="del_class" data-val="${esc(c)}" title="このクラスを削除">×</button>
+          </div>
+        `).join('')}
+      </div>
+      <div class="row">
+        <input type="text" id="newClassInput" placeholder="新しいクラス名（例：4組）">
+        <button class="btn ghost sm" data-act="add_class">＋クラスを追加</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>名簿（${esc(state.rosterGrade)} ${esc(state.rosterClass||'')}）</h2>
+      <p class="sub">「出席番号 名前」の形式で1行ずつ貼り付けてください（例：3 佐藤花子）</p>
+      <textarea id="rosterTextarea" rows="10" placeholder="1 山田太郎&#10;2 鈴木花子&#10;3 佐藤次郎">${esc(state.rosterDraft!==null && state.rosterDraft!=='' ? state.rosterDraft : list.join('\n'))}</textarea>
+      <div class="row" style="margin-top:10px;">
+        <button class="btn yellow" data-act="save_roster">この名簿を保存（${list.length}名 登録中）</button>
+      </div>
+    </div>`;
+  }
+
+  function renderResponsesTab(){
+    const tplOptions = state.config.templates.map(t=>`<option value="${t.id}" ${t.id===state.r_templateId?'selected':''}>${esc(t.name)}</option>`).join('');
+    const classOptionsForFilter = state.r_gradeFilter!=='all' ? (state.config.classesByGrade[state.r_gradeFilter]||[]) : [];
+    let body = `<div class="card">
+      <h2>回答一覧・AI採点</h2>
+      <p class="sub">感想の記述を「思考・判断」「主体的に取り組む態度」の観点でAIが下書き採点します（最終判断は先生がご確認ください）</p>
+      <div class="row">
+        <select data-act="pick_r_template">
+          <option value="">-- 題材を選択 --</option>
+          ${tplOptions}
+        </select>
+        <select data-act="pick_r_grade">
+          <option value="all" ${state.r_gradeFilter==='all'?'selected':''}>すべての学年</option>
+          ${state.config.grades.map(g=>`<option value="${esc(g)}" ${g===state.r_gradeFilter?'selected':''}>${esc(g)}</option>`).join('')}
+        </select>
+        <select data-act="pick_r_class" ${state.r_gradeFilter==='all'?'disabled':''}>
+          <option value="all">すべてのクラス</option>
+          ${classOptionsForFilter.map(c=>`<option value="${esc(c)}" ${c===state.r_classFilter?'selected':''}>${esc(c)}</option>`).join('')}
+        </select>
+      </div>
+    </div>`;
+
+    if(!state.r_templateId){
+      body += `<div class="empty">題材を選ぶと回答が表示されます</div>`;
+      return body;
+    }
+    if(state.r_loading){
+      body += `<div class="empty">読み込み中…</div>`;
+      return body;
+    }
+    const tpl = state.config.templates.find(t=>t.id===state.r_templateId);
+    let rows = state.r_responses;
+    if(state.r_gradeFilter!=='all') rows = rows.filter(r=>r.grade===state.r_gradeFilter);
+    if(state.r_gradeFilter!=='all' && state.r_classFilter!=='all') rows = rows.filter(r=>r.className===state.r_classFilter);
+    rows = rows.slice().sort((a,b)=>(a.grade||'').localeCompare(b.grade||'') || a.className.localeCompare(b.className) || a.entry.localeCompare(b.entry,'ja'));
+
+    state.r_visibleIds = rows.map(r=>r.id);
+    const selectedCount = state.r_visibleIds.filter(id=>state.r_selected[id]).length;
+    const allSelected = rows.length>0 && selectedCount===rows.length;
+
+    const ungraded = rows.filter(r=>!r.aiScore).length;
+    const allRatingItems = [...tpl.ratingGroups[0].items, ...tpl.ratingGroups[1].items];
+
+    body += `<div class="card">
+      <div class="row" style="margin-bottom:12px; align-items:center;">
+        <div><strong>${rows.length}</strong> 件の回答（未採点 ${ungraded} 件・選択中 ${selectedCount} 件）</div>
+        <button class="btn yellow sm" data-act="grade_all" ${ungraded===0?'disabled':''}>未採点をまとめてAI採点</button>
+        <button class="btn ghost sm" data-act="export_csv">CSVダウンロード</button>
+        <button class="btn danger sm" data-act="delete_selected" ${selectedCount===0?'disabled':''}>選択した回答を削除</button>
+        <button class="btn danger sm" data-act="delete_all_filtered" ${rows.length===0?'disabled':''}>表示中を全件削除</button>
+        <span class="hint" id="pollIndicator" style="align-self:center;">🔴 リアルタイム更新中</span>
+      </div>
+      <div style="overflow-x:auto;">
+      <table>
+        <thead><tr>
+          <th><input type="checkbox" data-act="toggle_select_all" ${allSelected?'checked':''}></th>
+          <th>学年</th><th>クラス</th><th>出席番号・氏名</th>
+          ${tpl.ratingGroups[0].items.map(r=>`<th>[態度]${esc(r.label)}</th>`).join('')}
+          ${tpl.ratingGroups[1].items.map(r=>`<th>[判断]${esc(r.label)}</th>`).join('')}
+          <th>感想（抜粋）</th>
+          <th>AI採点</th>
+          <th>文字数B</th>
+          <th>合計</th>
+          <th></th>
+        </tr></thead>
+        <tbody>
+        ${rows.map(r=>`
+          <tr>
+            <td><input type="checkbox" data-act="toggle_select_resp" data-id="${r.id}" ${state.r_selected[r.id]?'checked':''}></td>
+            <td>${esc(r.grade||'-')}</td>
+            <td>${esc(r.className)}</td>
+            <td>${esc(r.entry)}</td>
+            ${allRatingItems.map(rt=>`<td class="mono">${r.ratings[rt.id]||'-'}</td>`).join('')}
+            <td style="max-width:220px;">${esc(Object.values(r.reflections)[0]||'').slice(0,40)}…</td>
+            <td>${r.aiScore ? `<span class="mono">${r.aiScore.ai}</span>` : '<span class="pending">未採点</span>'}</td>
+            <td class="mono">${r.aiScore ? r.aiScore.bonus : '-'}</td>
+            <td>${renderScoreCell(r)}</td>
+            <td style="white-space:nowrap;">
+              ${state.r_grading[r.id] ? '<span class="pending">採点中…</span>' :
+                `<button class="btn ghost sm" data-act="grade_one" data-id="${r.id}">${r.aiScore?'再採点':'AI採点'}</button>`}
+              <button class="btn danger sm" data-act="delete_one_resp" data-id="${r.id}">削除</button>
+            </td>
+          </tr>
+        `).join('') || `<tr><td colspan="13" class="empty">回答がまだありません</td></tr>`}
+        </tbody>
+      </table>
+      </div>
+    </div>`;
+    return body;
+  }
+
+  function renderScoreCell(r){
+    if(!r.aiScore) return '<span class="pending">未採点</span>';
+    const n = (r.aiScore.aiPerItem||[1]).length || 1;
+    const max = n*9;
+    const pct = max>0 ? r.aiScore.total/max : 0;
+    let cls = 's1';
+    if(pct>=0.8) cls='s5';
+    else if(pct>=0.65) cls='s4';
+    else if(pct>=0.45) cls='s3';
+    else if(pct>=0.25) cls='s2';
+    return `<span class="score-pill ${cls}">${r.aiScore.total}</span>`;
+  }
+
+  // ---------- AI grading via Gemini ----------
+  // 感想は何問あってもOK。1問ずつ「内容(0-5点)」と「文字数ボーナス(0-4点)」を算出し、合計する。
+  function calcLengthBonus(text){
+    const len = (text||'').trim().length;
+    if(len >= 100) return 4;
+    if(len >= 75) return 3;
+    if(len >= 50) return 2;
+    if(len >= 25) return 1;
+    return 0;
+  }
+
+  // 感想の設問・ヒントの内容から、その題材ならではのAI採点基準文を自動生成する
+  async function generateRubricFromHints(t){
+    const refs = t.reflections || [];
+    const refsText = refs.map((f,i)=>`感想${i+1} 設問：${f.label||'(未入力)'}\n感想${i+1} ヒント：${f.hint||'(未入力)'}`).join('\n');
+
+    const prompt = `あなたは中学校美術科の教員です。以下は「${t.name || '（題材名未設定）'}」という題材の振り返りシートで、生徒に書かせる感想の設問とヒントです。
+
+${refsText}
+
+この設問・ヒントの内容から、生徒の感想を採点する際に使う「AI採点基準」を作成してください。
+観点は「思考・判断」と「主体的に取り組む態度」です。
+
+■出力ルール
+・箇条書きで2〜4個
+・各項目は「・」で始める1文
+・この題材・この設問ならではの具体的な視点を盛り込むこと（他の題材にも当てはまるような一般論にしない）
+・出力は箇条書きの本文のみ。前置きや説明、見出し、コードブロックの記号は一切つけない
+
+出力例（色彩構成の場合）：
+・配色の意図（色の組み合わせや対比の効果）を、自分の言葉で具体的に説明できているか。
+・完成作品を見て、次にどう工夫すればより効果的な配色になるか考えられているか。
+・試行錯誤を楽しみながら、友達の作品の色使いからも学ぼうとする姿勢が伝わるか。`;
+
+    const key = getGeminiKey();
+    if(!key){ throw new Error('先にAPIキーを設定してください（画面右上「🔑 APIキー設定」）'); }
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
+    const response = await fetch(url, {
+      method: "post",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+    });
+    const json = await response.json();
+    console.log('Gemini rubric response:', json);
+    if(!response.ok || json.error){
+      throw new Error('Gemini API error: ' + (json.error && json.error.message ? json.error.message : response.status));
+    }
+    if(!json.candidates || !json.candidates[0] || !json.candidates[0].content){
+      throw new Error('Gemini API blocked or empty response: ' + JSON.stringify(json).slice(0,300));
+    }
+    const raw = (json.candidates[0].content.parts[0].text || '').trim();
+    return raw.replace(/```/g,'').trim();
+  }
+
+  async function gradeResponse(tpl, resp){
+    const refs = tpl.reflections || [];
+    const texts = refs.map(f => resp.reflections[f.id] || '');
+    const bonusPerItem = texts.map(t => calcLengthBonus(t));
+    const totalBonus = bonusPerItem.reduce((a,b)=>a+b, 0);
+
+    const listText = texts.map((t,i)=>`感想${i+1}：${t}`).join('\n');
+    const rubric = tpl.aiRubric && tpl.aiRubric.trim() ? tpl.aiRubric : DEFAULT_AI_RUBRIC;
+
+    const prompt = `あなたは中学校の美術の先生です。生徒が書いた【${tpl.name}】の感想を採点してください。
+${listText}
+
+【重要】感想をひとつずつ5点満点で採点してください。感想が${texts.length}個あるので、${texts.length}個の整数（各0〜5点）を半角カンマ区切りで返してください。それ以外の文字は一切含めないでください。
+
+■採点基準（この題材の「思考・判断」＆「主体的な態度」の観点）
+${rubric}
+
+■ルール（各感想ごとの目安）
+1〜2点：記述が非常に短い、または内容が抽象的。
+3点：一般的な感想。
+4点：自分の課題を具体的に分析し、工夫した点が書けている。
+5点：ポイントを深く理解し、高い意欲と深い分析が両立している。
+
+出力例（感想が2個の場合）："4,3"`;
+
+    const key = getGeminiKey();
+    if(!key){ throw new Error('先にAPIキーを設定してください（画面右上「🔑 APIキー設定」）'); }
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
+    const response = await fetch(url, {
+      method: "post",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+    });
+    const json = await response.json();
+    if(!response.ok || json.error){
+      throw new Error('Gemini API error: ' + (json.error && json.error.message ? json.error.message : response.status));
+    }
+    if(!json.candidates || !json.candidates[0] || !json.candidates[0].content){
+      throw new Error('Gemini API blocked or empty response: ' + JSON.stringify(json).slice(0,300));
+    }
+    const raw = (json.candidates[0].content.parts[0].text || '').trim();
+    let aiPerItem = raw.split(/[,、\s]+/).map(s=>parseInt(s)).filter(n=>!isNaN(n));
+    while(aiPerItem.length < texts.length) aiPerItem.push(0);
+    aiPerItem = aiPerItem.slice(0, texts.length);
+    const totalAi = aiPerItem.reduce((a,b)=>a+b, 0);
+
+    return {
+      aiPerItem: aiPerItem,
+      bonusPerItem: bonusPerItem,
+      ai: totalAi,
+      bonus: totalBonus,
+      total: totalAi + totalBonus,
+      comment: ''
+    };
+  }
+
+  async function gradeOne(id){
+    const tpl = state.config.templates.find(t=>t.id===state.r_templateId);
+    const resp = state.r_responses.find(r=>r.id===id);
+    if(!tpl || !resp) return;
+    state.r_grading[id] = true; render();
+    try{
+      const score = await gradeResponse(tpl, resp);
+      resp.aiScore = score;
+      await saveAiScoreOnly(tpl.id, resp.id, score);
+    }catch(e){
+      console.error('gradeOne failed:', e);
+      toast('AI採点に失敗: ' + e.message);
+    }
+    delete state.r_grading[id];
+    render();
+  }
+
+  async function gradeAll(){
+    const tpl = state.config.templates.find(t=>t.id===state.r_templateId);
+    const targets = state.r_responses.filter(r=>!r.aiScore);
+    for(const resp of targets){
+      state.r_grading[resp.id] = true; render();
+      try{
+        const score = await gradeResponse(tpl, resp);
+        resp.aiScore = score;
+        await saveAiScoreOnly(tpl.id, resp.id, score);
+      }catch(e){ /* skip on failure, continue */ }
+      delete state.r_grading[resp.id];
+      await new Promise(r=>setTimeout(r, 4200)); // Gemini無料枠のレート制限対策
+    }
+    render();
+    toast('AI採点が完了しました');
+  }
+
+  function exportCsv(){
+    const tpl = state.config.templates.find(t=>t.id===state.r_templateId);
+    if(!tpl) return;
+    const taidoIds = tpl.ratingGroups[0].items.map(i=>i.id);
+    const shikouIds = tpl.ratingGroups[1].items.map(i=>i.id);
+    const headers = ['学年','クラス','出席番号・氏名','主体的に取り組む態度(合計)','思考・判断(合計)','感想AI採点(内容)','文字数加点','総合計'];
+    const lines = [headers.join(',')];
+    state.r_responses.forEach(r=>{
+      const taidoTotal = taidoIds.reduce((s,id)=> s + (r.ratings[id]||0), 0);
+      const shikouTotal = shikouIds.reduce((s,id)=> s + (r.ratings[id]||0), 0);
+      const row = [
+        r.grade||'', r.className, r.entry,
+        taidoTotal, shikouTotal,
+        r.aiScore?r.aiScore.ai:'',
+        r.aiScore?r.aiScore.bonus:'',
+        r.aiScore?r.aiScore.total:'',
+      ];
+      lines.push(row.join(','));
+    });
+    const blob = new Blob(["\uFEFF"+lines.join('\n')], {type:'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${tpl.name}_集計.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // ================= EVENTS =================
+  function bindEvents(){
+    $app.querySelectorAll('[data-act]').forEach(el=>{
+      const act = el.dataset.act;
+      const evt = (el.tagName==='SELECT' || el.tagName==='TEXTAREA' || el.tagName==='INPUT') ? 'change' : 'click';
+      el.addEventListener(evt, (e)=>handleAction(act, el, e));
+      if(el.tagName==='TEXTAREA' && (act==='s_reflect')){
+        el.addEventListener('input', (e)=>{ state.s_reflections[el.dataset.fid] = el.value; });
+      }
+      if((el.tagName==='INPUT' || el.tagName==='TEXTAREA') && act && act.startsWith('edit_') && act!=='edit_target_grade'){
+        el.addEventListener('input', (e)=>handleEditInput(act, el));
+      }
+    });
+  }
+
+  function handleEditInput(act, el){
+    const t = state.editingTemplate;
+    const idx = el.dataset.idx!==undefined ? parseInt(el.dataset.idx) : null;
+    const g = el.dataset.group!==undefined ? parseInt(el.dataset.group) : null;
+    if(act==='edit_name') t.name = el.value;
+    else if(act==='edit_rating_label') t.ratingGroups[g].items[idx].label = el.value;
+    else if(act==='edit_rating_hint') t.ratingGroups[g].items[idx].hint = el.value;
+    else if(act==='edit_ref_label') t.reflections[idx].label = el.value;
+    else if(act==='edit_ref_hint') t.reflections[idx].hint = el.value;
+    else if(act==='edit_rubric') t.aiRubric = el.value;
+  }
+
+  async function handleAction(act, el){
+    switch(act){
+      case 'mode':
+        if(el.dataset.val === 'teacher'){
+          await enterTeacherMode();
+        } else {
+          stopRealtimeResponses();
+          state.mode = 'student'; render();
+        }
+        break;
+
+      // student
+      case 's_pick_grade':
+        state.s_grade = el.value || null;
+        state.s_templateId = null;
+        state.s_class = null; state.s_entry = null;
+        state.s_ratings = {}; state.s_reflections = {};
+        render(); break;
+      case 's_pick_template':
+        state.s_templateId = el.value || null;
+        state.s_ratings = {}; state.s_reflections = {};
+        render(); break;
+      case 's_pick_class':
+        state.s_class = el.value || null; state.s_entry = null; render(); break;
+      case 's_pick_entry':
+        state.s_entry = el.value || null; render(); break;
+      case 's_rate':
+        state.s_ratings[el.dataset.rid] = parseInt(el.dataset.val); render(); break;
+      case 's_submit':
+        submitStudent(); break;
+      case 's_reset_next':
+        resetStudentForNext(); break;
+
+      // teacher tabs
+      case 'tteam':
+        state.teacherTab = el.dataset.val;
+        if(state.teacherTab==='responses' && state.r_templateId) startRealtimeResponses(state.r_templateId);
+        else stopRealtimeResponses();
+        render(); break;
+
+      // templates
+      case 'new_tpl':
+        state.editingTemplate = blankTemplate();
+        render(); break;
+      case 'edit_tpl':
+        state.editingTemplate = JSON.parse(JSON.stringify(state.config.templates.find(t=>t.id===el.dataset.id)));
+        render(); break;
+      case 'dup_tpl': {
+        const orig = state.config.templates.find(t=>t.id===el.dataset.id);
+        if(!orig) return;
+        const copy = JSON.parse(JSON.stringify(orig));
+        copy.id = uid();
+        copy.createdAt = Date.now();
+        copy.name = copy.name + '（コピー）';
+        state.editingTemplate = copy;
+        render();
+        break;
+      }
+      case 'del_tpl': {
+        const t = state.config.templates.find(t=>t.id===el.dataset.id);
+        state.modal = {kind:'confirmDeleteTemplate', id: el.dataset.id, name: t?t.name:''};
+        render();
+        break;
+      }
+      case 'edit_target_grade':
+        state.editingTemplate.targetGrade = el.value; render(); break;
+      case 'pick_tpl_grade_filter':
+        state.tpl_gradeFilter = el.value; render(); break;
+      case 'add_rating':
+        state.editingTemplate.ratingGroups[parseInt(el.dataset.group)].items.push({id:uid(),label:'',hint:''}); render(); break;
+      case 'del_rating': {
+        const grp = state.editingTemplate.ratingGroups[parseInt(el.dataset.group)];
+        if(grp.items.length<=1){ toast('評価項目は各カテゴリ最低1つ必要です'); return; }
+        grp.items.splice(parseInt(el.dataset.idx),1); render(); break;
+      }
+      case 'add_ref':
+        state.editingTemplate.reflections.push({id:uid(),label:'',hint:''}); render(); break;
+      case 'del_ref': {
+        const arr = state.editingTemplate.reflections;
+        if(arr.length<=1){ toast('感想項目は最低1つ必要です'); return; }
+        arr.splice(parseInt(el.dataset.idx),1); render(); break;
+      }
+      case 'auto_gen_rubric': {
+        const t = state.editingTemplate;
+        const hasContent = (t.reflections||[]).some(f=>(f.label||'').trim() || (f.hint||'').trim());
+        if(!hasContent){ toast('先に感想の設問かヒントを入力してください'); return; }
+        state.rubricGenerating = true; render();
+        try{
+          const rubric = await generateRubricFromHints(t);
+          if(rubric){
+            t.aiRubric = rubric;
+            toast('AI採点基準を生成しました（内容は自由に編集できます）');
+          } else {
+            toast('生成に失敗しました。もう一度お試しください');
+          }
+        }catch(e){
+          console.error('auto_gen_rubric failed:', e);
+          toast('生成に失敗: ' + e.message);
+        }
+        state.rubricGenerating = false;
+        render();
+        break;
+      }
+      case 'save_template': {
+        const t = state.editingTemplate;
+        if(!t.name.trim()){ toast('題材名を入力してください'); return; }
+        const idx = state.config.templates.findIndex(x=>x.id===t.id);
+        if(idx>=0) state.config.templates[idx]=t; else state.config.templates.push(t);
+        await saveConfig();
+        state.editingTemplate = null;
+        toast('保存しました');
+        render();
+        break;
+      }
+      case 'cancel_edit':
+        state.editingTemplate = null; render(); break;
+
+      // 学年・クラス・名簿
+      case 'pick_roster_grade':
+        state.rosterGrade = el.dataset.val;
+        state.rosterClass = (state.config.classesByGrade[state.rosterGrade]||[])[0] || null;
+        state.rosterDraft='';
+        render(); break;
+      case 'pick_roster_class':
+        state.rosterClass = el.dataset.val; state.rosterDraft='';
+        render(); break;
+      case 'add_grade': {
+        const val = (document.getElementById('newGradeInput').value||'').trim();
+        if(!val){ toast('学年名を入力してください'); return; }
+        if(state.config.grades.includes(val)){ toast('その学年は既にあります'); return; }
+        state.config.grades.push(val);
+        state.config.classesByGrade[val] = ['1組','2組','3組'];
+        state.config.classesByGrade[val].forEach(c=>{ state.config.rosters[rosterKey(val,c)] = []; });
+        await saveConfig();
+        state.rosterGrade = val;
+        state.rosterClass = state.config.classesByGrade[val][0];
+        toast('学年を追加しました（題材は「題材をつくる」タブでこの学年用に作成してください）');
+        render();
+        break;
+      }
+      case 'del_grade': {
+        if(state.config.grades.length<=1){ toast('学年は最低1つ必要です'); return; }
+        state.modal = {kind:'confirmDeleteGrade', grade: el.dataset.val};
+        render();
+        break;
+      }
+      case 'add_class': {
+        const val = (document.getElementById('newClassInput').value||'').trim();
+        if(!val){ toast('クラス名を入力してください'); return; }
+        const arr = state.config.classesByGrade[state.rosterGrade];
+        if(arr.includes(val)){ toast('そのクラスは既にあります'); return; }
+        arr.push(val);
+        state.config.rosters[rosterKey(state.rosterGrade,val)] = [];
+        await saveConfig();
+        state.rosterClass = val;
+        toast('クラスを追加しました');
+        render();
+        break;
+      }
+      case 'del_class': {
+        const arr = state.config.classesByGrade[state.rosterGrade];
+        if(arr.length<=1){ toast('クラスは各学年最低1つ必要です'); return; }
+        state.modal = {kind:'confirmDeleteClass', grade: state.rosterGrade, cls: el.dataset.val};
+        render();
+        break;
+      }
+      case 'save_roster': {
+        const ta = document.getElementById('rosterTextarea');
+        const names = ta.value.split('\n').map(s=>s.trim()).filter(Boolean);
+        state.config.rosters[rosterKey(state.rosterGrade, state.rosterClass)] = names;
+        await saveConfig();
+        state.rosterDraft='';
+        toast('名簿を保存しました');
+        render();
+        break;
+      }
+
+      // responses
+      case 'pick_r_template':
+        state.r_templateId = el.value || null;
+        if(state.r_templateId){
+          state.r_loading = true; render();
+          state.r_responses = await loadResponses(state.r_templateId);
+          state.r_loading = false;
+          startRealtimeResponses(state.r_templateId);
+        } else {
+          stopRealtimeResponses();
+        }
+        render(); break;
+      case 'pick_r_grade':
+        state.r_gradeFilter = el.value; state.r_classFilter='all'; render(); break;
+      case 'pick_r_class':
+        state.r_classFilter = el.value; render(); break;
+      case 'grade_one':
+        gradeOne(el.dataset.id); break;
+      case 'grade_all':
+        gradeAll(); break;
+      case 'export_csv':
+        exportCsv(); break;
+      case 'toggle_select_resp':
+        state.r_selected[el.dataset.id] = el.checked;
+        render(); break;
+      case 'toggle_select_all': {
+        const shouldSelect = el.checked;
+        state.r_visibleIds.forEach(id=>{ state.r_selected[id] = shouldSelect; });
+        render(); break;
+      }
+      case 'delete_one_resp':
+        state.modal = {kind:'confirmDeleteResponses', ids:[el.dataset.id], label:'この回答'};
+        render(); break;
+      case 'delete_selected': {
+        const ids = state.r_visibleIds.filter(id=>state.r_selected[id]);
+        if(ids.length===0){ toast('削除する回答を選択してください'); return; }
+        state.modal = {kind:'confirmDeleteResponses', ids, label: ids.length+'件の選択した回答'};
+        render(); break;
+      }
+      case 'delete_all_filtered': {
+        const ids = state.r_visibleIds.slice();
+        if(ids.length===0){ toast('削除する回答がありません'); return; }
+        state.modal = {kind:'confirmDeleteResponses', ids, label: '表示中の'+ids.length+'件すべて'};
+        render(); break;
+      }
+      case 'modal_confirm_delete_responses': {
+        const ids = state.modal.ids;
+        await deleteResponses(state.r_templateId, ids);
+        ids.forEach(id=>{ delete state.r_selected[id]; });
+        state.modal = null;
+        toast('削除しました');
+        render();
+        break;
+      }
+      case 'change_pass':
+        changeTeacherPassword(); break;
+      case 'gemini_key_setup':
+        state.modal = {kind:'geminiKeySetup'}; render(); break;
+      case 'modal_submit_geminikey': {
+        const val = document.getElementById('modalInput1').value;
+        setGeminiKey(val);
+        state.modal = null;
+        toast(val.trim() ? 'APIキーを保存しました（この端末のみ）' : 'APIキーを削除しました');
+        render();
+        break;
+      }
+      case 'modal_cancel':
+        state.modal = null; render(); break;
+      case 'modal_submit_setup':
+        await submitTeacherSetup(); break;
+      case 'modal_submit_login':
+        submitTeacherLogin(); break;
+      case 'modal_submit_changepass':
+        await submitChangePass(); break;
+      case 'modal_confirm_delete_tpl':
+        state.config.templates = state.config.templates.filter(t=>t.id!==el.dataset.id);
+        await saveConfig();
+        state.modal = null;
+        render();
+        break;
+      case 'modal_confirm_delete_grade': {
+        const g = state.modal.grade;
+        state.config.grades = state.config.grades.filter(x=>x!==g);
+        delete state.config.classesByGrade[g];
+        Object.keys(state.config.rosters).forEach(k=>{ if(k.indexOf(g+'|')===0) delete state.config.rosters[k]; });
+        state.config.templates = state.config.templates.filter(t=>t.targetGrade!==g);
+        await saveConfig();
+        if(state.rosterGrade===g){
+          state.rosterGrade = state.config.grades[0];
+          state.rosterClass = (state.config.classesByGrade[state.rosterGrade]||[])[0] || null;
+        }
+        state.modal = null;
+        render();
+        break;
+      }
+      case 'modal_confirm_delete_class': {
+        const g = state.modal.grade, c = state.modal.cls;
+        state.config.classesByGrade[g] = (state.config.classesByGrade[g]||[]).filter(x=>x!==c);
+        delete state.config.rosters[rosterKey(g,c)];
+        await saveConfig();
+        if(state.rosterGrade===g && state.rosterClass===c){
+          state.rosterClass = (state.config.classesByGrade[g]||[])[0] || null;
+        }
+        state.modal = null;
+        render();
+        break;
+      }
+    }
+  }
+
+  // init
+  (async function init(){
+    if(!FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.apiKey.indexOf('ここに')===0){
+      $app.innerHTML = `
+        <div style="max-width:560px;margin:60px auto;padding:28px;font-family:'Noto Sans JP',sans-serif;background:#fff;border:1.5px solid #DFE3EA;border-radius:14px;">
+          <h2 style="margin-top:0;color:#152343;">Firebaseの設定がまだです</h2>
+          <p style="color:#333;line-height:1.7;">
+            このファイルの先頭にある <code>FIREBASE_CONFIG</code> に、あなたのFirebaseプロジェクトの設定値を貼り付けてから使ってください。<br>
+            手順はファイル冒頭のコメントに書いてあります。
+          </p>
+        </div>`;
+      return;
+    }
+    try{
+      firebase.initializeApp(FIREBASE_CONFIG);
+    }catch(e){
+      $app.innerHTML = `<div style="max-width:560px;margin:60px auto;padding:28px;font-family:sans-serif;">Firebaseの初期化に失敗しました。FIREBASE_CONFIGの値を確認してください。<br>${esc(e.message)}</div>`;
+      return;
+    }
+    try{
+      await loadConfig();
+    }catch(e){
+      state.config = defaultConfig();
+    }
+    state.loading = false;
+    render();
+  })();
+})();
+</script>
+
+</body>
+</html>
+
