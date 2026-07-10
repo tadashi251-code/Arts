@@ -1076,8 +1076,8 @@
             <td>${esc(r.entry)}</td>
             ${allRatingItems.map(rt=>`<td class="mono">${r.ratings[rt.id]||'-'}</td>`).join('')}
             <td style="max-width:220px;">${esc(Object.values(r.reflections)[0]||'').slice(0,40)}…</td>
-            <td>${r.aiScore ? `<span class="mono">${r.aiScore.ai}</span>` : '<span class="pending">未採点</span>'}</td>
-            <td class="mono">${r.aiScore ? r.aiScore.bonus : '-'}</td>
+            <td>${r.aiScore ? `<span class="mono">${r.aiScore.ai} / ${(r.aiScore.aiPerItem||[]).length*5}</span>` : '<span class="pending">未採点</span>'}</td>
+            <td class="mono">${r.aiScore ? `${r.aiScore.bonus} / ${(r.aiScore.aiPerItem||[]).length*5}` : '-'}</td>
             <td>${renderScoreCell(r)}</td>
             <td style="white-space:nowrap;">
               ${state.r_grading[r.id] ? '<span class="pending">採点中…</span>' :
@@ -1096,20 +1096,21 @@
   function renderScoreCell(r){
     if(!r.aiScore) return '<span class="pending">未採点</span>';
     const n = (r.aiScore.aiPerItem||[1]).length || 1;
-    const max = n*9;
+    const max = n*10;
     const pct = max>0 ? r.aiScore.total/max : 0;
     let cls = 's1';
     if(pct>=0.8) cls='s5';
     else if(pct>=0.65) cls='s4';
     else if(pct>=0.45) cls='s3';
     else if(pct>=0.25) cls='s2';
-    return `<span class="score-pill ${cls}">${r.aiScore.total}</span>`;
+    return `<span class="score-pill ${cls}">${r.aiScore.total} / ${max}</span>`;
   }
 
   // ---------- AI grading via Gemini ----------
-  // 感想は何問あってもOK。1問ずつ「内容(0-5点)」と「文字数ボーナス(0-4点)」を算出し、合計する。
+  // 感想は何問あってもOK。1問ずつ「内容(0-5点)」と「文字数ボーナス(0-5点)」を算出し、合計する。
   function calcLengthBonus(text){
     const len = (text||'').trim().length;
+    if(len >= 120) return 5;
     if(len >= 100) return 4;
     if(len >= 75) return 3;
     if(len >= 50) return 2;
